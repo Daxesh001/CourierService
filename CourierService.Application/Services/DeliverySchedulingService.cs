@@ -11,24 +11,17 @@ namespace CourierService.Application.Services
         {
             ValidateInputs(baseCost, packages, vehicle);
 
-            try
+            var result = CalculatePackageCosts(baseCost, packages);
+
+            if (vehicle == null || vehicle.NumberOfVehicles <= 0)
             {
-                var result = CalculatePackageCosts(baseCost, packages);
-
-                if (vehicle == null || vehicle.NumberOfVehicles <= 0)
-                {
-                    result.MaxDeliveryTimeHours = 0m;
-                    return result;
-                }
-
-                AssignEtas(result, packages, vehicle);
-
+                result.MaxDeliveryTimeHours = 0m;
                 return result;
             }
-            catch (Exception)
-            {
-                throw;
-            }
+
+            AssignEtas(result, packages, vehicle);
+
+            return result;
         }
 
         private void ValidateInputs(decimal baseCost, List<Package> packages, Vehicle vehicle)
@@ -38,16 +31,9 @@ namespace CourierService.Application.Services
 
             foreach (var p in packages)
             {
-                Guard.NotNull(p, nameof(packages));
+                Guard.NotNull(p, nameof(p));
                 Guard.NonNegative(p.WeightKg, nameof(p.WeightKg));
                 Guard.NonNegative(p.DistanceKm, nameof(p.DistanceKm));
-            }
-
-            if (vehicle != null)
-            {
-                Guard.GreaterThanZero(vehicle.MaxSpeedKmH, nameof(vehicle.MaxSpeedKmH));
-                Guard.GreaterThanZero(vehicle.MaxCarryWeightKg, nameof(vehicle.MaxCarryWeightKg));
-                Guard.GreaterThanZero(vehicle.NumberOfVehicles, nameof(vehicle.NumberOfVehicles));
             }
         }
 
@@ -76,72 +62,108 @@ namespace CourierService.Application.Services
 
             return result;
         }
-
-        private void AssignEtas(DeliveryResultDto result, List<Package> packages, Vehicle vehicle)
+        private void AssignEtas(
+            DeliveryResultDto result,
+            List<Package> packages,
+            Vehicle vehicle)
         {
-            var speed = vehicle.MaxSpeedKmH;
-            var capacity = vehicle.MaxCarryWeightKg;
-            var vehicleCount = vehicle.NumberOfVehicles;
+            int vehicleCount = vehicle.NumberOfVehicles;
+            decimal speed = vehicle.MaxSpeedKmH;
+            decimal capacity = vehicle.MaxCarryWeightKg;
 
-            var vehicleAvailable = new decimal[vehicleCount];
-
-            // Create batches (first-fit descending)
-            var remaining = new List<Package>(packages.OrderByDescending(p => p.WeightKg));
-            var batches = new List<List<Package>>();
+            var vehicleAvailableAt = new decimal[vehicleCount];
+            var remaining = new List<Package>(packages);
 
             while (remaining.Any())
             {
-                var batch = new List<Package>();
-                var currentWeight = 0m;
+                // Step 1: choose earliest available vehicle
+                int vehicleIndex = GetNextAvailableVehicle(vehicleAvailableAt);
+                decimal startTime = vehicleAvailableAt[vehicleIndex];
 
-                for (int i = 0; i < remaining.Count; )
+                // Step 2: pick best shipment
+                var shipment = SelectBestShipment(remaining, capacity);
+
+                // Step 3: assign ETA
+                foreach (var pkg in shipment)
                 {
-                    if (currentWeight + remaining[i].WeightKg <= capacity)
-                    {
-                        currentWeight += remaining[i].WeightKg;
-                        batch.Add(remaining[i]);
-                        remaining.RemoveAt(i);
-                    }
-                    else
-                    {
-                        i++;
-                    }
+                    var pkgResult = result.Packages
+                        .First(p => p.Id == pkg.Id);
+
+                    pkgResult.ETAHours = startTime + (pkg.DistanceKm / speed);
                 }
 
-                if (batch.Any()) batches.Add(batch);
-                else break;
+                decimal maxDistance = shipment.Max(p => p.DistanceKm);
+                decimal roundTripTime = (2 * maxDistance) / speed;
+
+                vehicleAvailableAt[vehicleIndex] = startTime + roundTripTime;
+
+                // Step 5: remove delivered packages
+                remaining.RemoveAll(p => shipment.Contains(p));
             }
 
-            for (int i = 0; i < batches.Count; i++)
+            result.MaxDeliveryTimeHours = vehicleAvailableAt.Max();
+        }
+
+        private List<Package> SelectBestShipment(List<Package> packages,decimal capacity)
+        {
+            List<Package> best = new();
+            int bestCount = 0;
+            decimal bestWeight = 0;
+            decimal bestMaxDistance = decimal.MaxValue;
+
+            int n = packages.Count;
+            int combinations = 1 << n;
+
+            for (int mask = 1; mask < combinations; mask++)
             {
-                int vehicleIndex = 0;
-                decimal earliest = vehicleAvailable[0];
-                for (int v = 1; v < vehicleCount; v++)
+                var current = new List<Package>();
+                decimal weight = 0;
+
+                for (int i = 0; i < n; i++)
                 {
-                    if (vehicleAvailable[v] < earliest)
+                    if ((mask & (1 << i)) != 0)
                     {
-                        earliest = vehicleAvailable[v];
-                        vehicleIndex = v;
+                        weight += packages[i].WeightKg;
+                        if (weight > capacity) break;
+                        current.Add(packages[i]);
                     }
                 }
 
-                var batch = batches[i];
-                var maxDistance = batch.Max(b => b.DistanceKm);
+                if (weight > capacity) continue;
 
-                foreach (var pkg in batch)
+                int count = current.Count;
+                decimal maxDistance = current.Max(p => p.DistanceKm);
+
+                if (count > bestCount ||
+                    (count == bestCount && weight > bestWeight) ||
+                    (count == bestCount && weight == bestWeight &&
+                     maxDistance < bestMaxDistance))
                 {
-                    var pkgResult = result.Packages.Find(p => p.Id == pkg.Id);
-                    if (pkgResult != null)
-                    {
-                        pkgResult.ETAHours = decimal.Round(earliest + (pkg.DistanceKm / speed), 2);
-                    }
+                    best = current;
+                    bestCount = count;
+                    bestWeight = weight;
+                    bestMaxDistance = maxDistance;
                 }
-
-                var roundTrip = (2 * maxDistance) / speed;
-                vehicleAvailable[vehicleIndex] = decimal.Round(earliest + roundTrip, 2);
             }
 
-            result.MaxDeliveryTimeHours = vehicleAvailable.Max();
+            return best;
+        }
+
+        private int GetNextAvailableVehicle(decimal[] availableAt)
+        {
+            int index = 0;
+            decimal earliest = availableAt[0];
+
+            for (int i = 1; i < availableAt.Length; i++)
+            {
+                if (availableAt[i] < earliest)
+                {
+                    earliest = availableAt[i];
+                    index = i;
+                }
+            }
+
+            return index;
         }
     }
 }
