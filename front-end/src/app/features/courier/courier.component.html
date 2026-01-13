@@ -1,0 +1,147 @@
+<mat-toolbar class="app-header">
+  <span class="app-title fs-1">🚚 Courier Service</span>
+</mat-toolbar>
+
+<div class="page" [formGroup]="form">
+
+  <!-- Base Delivery Cost -->
+  <mat-card class="card">
+    <div class="section-title">Base Delivery Cost</div>
+
+    <mat-form-field appearance="outline" class="full">
+      <mat-label>Base Cost</mat-label>
+      <input matInput type="number" formControlName="baseDeliveryCost">
+    </mat-form-field>
+    <mat-form-field appearance="outline" class="full">
+      <mat-label>Total Package</mat-label>
+      <input matInput type="number" formControlName="totalPackage">
+    </mat-form-field>
+  </mat-card>
+
+  <!-- Packages -->
+  <mat-card class="card">
+    <div class="section-title">Packages</div>
+
+    <div formArrayName="packages">
+      <div
+        class="package-row courier-delete"
+        *ngFor="let pkg of packages.controls; let i = index"
+        [formGroupName]="i"
+      >
+        <mat-form-field appearance="outline">
+          <mat-label>Package ID</mat-label>
+          <input matInput formControlName="id" required aria-required="true">
+          <mat-error *ngIf="pkg.get('id')?.invalid && (pkg.get('id')?.touched || pkg.get('id')?.dirty)">
+            Package ID is required
+          </mat-error>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Weight (kg)</mat-label>
+          <input matInput type="number" formControlName="weightKg" required aria-required="true">
+          <mat-error *ngIf="pkg.get('weightKg')?.invalid && (pkg.get('weightKg')?.touched || pkg.get('weightKg')?.dirty)">
+            Please enter weight (kg)
+          </mat-error>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Distance (km)</mat-label>
+          <input matInput type="number" formControlName="distanceKm" required aria-required="true">
+          <mat-error *ngIf="pkg.get('distanceKm')?.invalid && (pkg.get('distanceKm')?.touched || pkg.get('distanceKm')?.dirty)">
+            Please enter distance (km)
+          </mat-error>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Offer Code</mat-label>
+          <input matInput formControlName="offerCode">
+        </mat-form-field>
+
+        <button
+          mat-icon-button
+          class="delete-btn"
+          (click)="removePackage(i)">
+          <mat-icon class="fs-5">delete</mat-icon>
+        </button>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button mat-stroked-button color="primary" (click)="addPackage()" [disabled]="packages.length >= form.get('totalPackage')?.value">
+        ➕ Add Package
+      </button>
+      <div class="validation-msg" *ngIf="packages.length >= form.get('totalPackage')?.value">
+        Maximum packages reached ({{ form.get('totalPackage')?.value }})
+      </div>
+      <div class="validation-msg" *ngIf="form.get('totalPackage')?.invalid && form.get('totalPackage')?.touched">
+        Please enter a valid number of total packages (min: 1)
+      </div>
+    </div>
+  </mat-card>
+
+  <!-- Vehicle Details -->
+  <mat-card class="card">
+    <div class="section-title">Vehicle Details</div>
+
+    <div formGroupName="vehicles" class="vehicle-grid">
+      <mat-form-field appearance="outline">
+        <mat-label>No. of Vehicles</mat-label>
+        <input matInput type="number" formControlName="numberOfVehicles">
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Max Speed (km/hr)</mat-label>
+        <input matInput type="number" formControlName="maxSpeedKmH">
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Max Carriable (kg)</mat-label>
+        <input matInput type="number" formControlName="maxCarryWeightKg">
+      </mat-form-field>
+    </div>
+  </mat-card>
+
+  <!-- Calculate -->
+  <div class="calculate-wrapper">
+    <button
+      mat-raised-button
+      class="calculate-btn"
+      (click)="submit()">
+      Calculate
+    </button>
+  </div>
+
+  <!-- Delivery Result -->
+  <mat-card class="card">
+    <div class="section-title">Delivery Result</div>
+
+    <table mat-table [dataSource]="results || []">
+
+      <ng-container matColumnDef="packageId">
+        <th mat-header-cell *matHeaderCellDef>Package ID</th>
+        <td mat-cell *matCellDef="let r">{{ r.packageId }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="discount">
+        <th mat-header-cell *matHeaderCellDef>Discount</th>
+        <td mat-cell *matCellDef="let r">{{ r.discount }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="totalCost">
+        <th mat-header-cell *matHeaderCellDef>Total Cost</th>
+        <td mat-cell *matCellDef="let r">{{ r.totalCost }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="deliveryTimeHours">
+        <th mat-header-cell *matHeaderCellDef>
+          Estimated Delivery Time (hrs)
+        </th>
+        <td mat-cell *matCellDef="let r">{{ r.deliveryTimeHours }}</td>
+      </ng-container>
+
+      <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+      <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+    </table>
+  </mat-card>
+
+</div>
