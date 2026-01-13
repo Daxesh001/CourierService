@@ -1,8 +1,3 @@
-﻿/CourierService.API/bin
-/.vs/CourierService
-/CourierService.API/obj
-/CourierService.Application/bin
-/CourierService.Application/obj
-/CourierService.Domain/bin
-/CourierService.Domain/obj
-/.vs/ProjectEvaluation
+﻿**/bin/
+**/obj/
+/.vs

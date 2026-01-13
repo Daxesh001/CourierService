@@ -1,25 +1,60 @@
-﻿using CourierService.Application.DTOs;
+﻿using CourierService.Application.Common;
+using CourierService.Application.DTOs;
 using CourierService.Application.Interfaces;
 using CourierService.Domain.Entities;
 
 namespace CourierService.Application.Services
 {
-    public class DeliverySchedulingService : IDeliveryScheduler
+    public class DeliverySchedulingService(ICostCalculator _costCalculator, IOfferService _offerService) : IDeliveryScheduler
     {
-        private readonly ICostCalculator _costCalculator;
-        private readonly IOfferService _offerService;
-
-        public DeliverySchedulingService(ICostCalculator costCalculator, IOfferService offerService)
+        public DeliveryResultDto ScheduleAndCalculate(decimal baseCost, List<Package> packages, Vehicle vehicle)
         {
-            _costCalculator = costCalculator;
-            _offerService = offerService;
+            ValidateInputs(baseCost, packages, vehicle);
+
+            try
+            {
+                var result = CalculatePackageCosts(baseCost, packages);
+
+                if (vehicle == null || vehicle.NumberOfVehicles <= 0)
+                {
+                    result.MaxDeliveryTimeHours = 0m;
+                    return result;
+                }
+
+                AssignEtas(result, packages, vehicle);
+
+                return result;
+            }
+            catch (Exception)
+            {
+                throw;
+            }
         }
 
-        public DeliveryResultDto ScheduleAndCalculate(decimal baseCost, List<Package> packages, Vehicle vehicle)
+        private void ValidateInputs(decimal baseCost, List<Package> packages, Vehicle vehicle)
+        {
+            Guard.NonNegative(baseCost, nameof(baseCost));
+            Guard.NotNullOrEmpty(packages, nameof(packages));
+
+            foreach (var p in packages)
+            {
+                Guard.NotNull(p, nameof(packages));
+                Guard.NonNegative(p.WeightKg, nameof(p.WeightKg));
+                Guard.NonNegative(p.DistanceKm, nameof(p.DistanceKm));
+            }
+
+            if (vehicle != null)
+            {
+                Guard.GreaterThanZero(vehicle.MaxSpeedKmH, nameof(vehicle.MaxSpeedKmH));
+                Guard.GreaterThanZero(vehicle.MaxCarryWeightKg, nameof(vehicle.MaxCarryWeightKg));
+                Guard.GreaterThanZero(vehicle.NumberOfVehicles, nameof(vehicle.NumberOfVehicles));
+            }
+        }
+
+        private DeliveryResultDto CalculatePackageCosts(decimal baseCost, List<Package> packages)
         {
             var result = new DeliveryResultDto();
 
-            // Calculate delivery cost and discount per package
             foreach (var pkg in packages)
             {
                 var deliveryCost = _costCalculator.CalculateDeliveryCost(baseCost, pkg.WeightKg, pkg.DistanceKm);
@@ -39,20 +74,18 @@ namespace CourierService.Application.Services
                 result.TotalCost += total;
             }
 
-            if (vehicle == null || vehicle.NumberOfVehicles <= 0)
-            {
-                // if no vehicle info provided, return costs without ETA
-                result.MaxDeliveryTimeHours = 0m;
-                return result;
-            }
+            return result;
+        }
 
+        private void AssignEtas(DeliveryResultDto result, List<Package> packages, Vehicle vehicle)
+        {
             var speed = vehicle.MaxSpeedKmH;
             var capacity = vehicle.MaxCarryWeightKg;
             var vehicleCount = vehicle.NumberOfVehicles;
 
             var vehicleAvailable = new decimal[vehicleCount];
 
-            // Create batches
+            // Create batches (first-fit descending)
             var remaining = new List<Package>(packages.OrderByDescending(p => p.WeightKg));
             var batches = new List<List<Package>>();
 
@@ -61,7 +94,6 @@ namespace CourierService.Application.Services
                 var batch = new List<Package>();
                 var currentWeight = 0m;
 
-                // simple first-fit descending
                 for (int i = 0; i < remaining.Count; )
                 {
                     if (currentWeight + remaining[i].WeightKg <= capacity)
@@ -96,8 +128,6 @@ namespace CourierService.Application.Services
                 var batch = batches[i];
                 var maxDistance = batch.Max(b => b.DistanceKm);
 
-                var travelTime = maxDistance / speed;
-
                 foreach (var pkg in batch)
                 {
                     var pkgResult = result.Packages.Find(p => p.Id == pkg.Id);
@@ -112,8 +142,6 @@ namespace CourierService.Application.Services
             }
 
             result.MaxDeliveryTimeHours = vehicleAvailable.Max();
-
-            return result;
         }
     }
 }
