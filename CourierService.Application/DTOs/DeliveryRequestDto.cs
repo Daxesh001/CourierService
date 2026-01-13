@@ -1,6 +1,4 @@
-﻿using System.Collections.Generic;
-
-namespace CourierService.Application.DTOs
+﻿namespace CourierService.Application.DTOs
 {
     public class DeliveryRequestDto
     {

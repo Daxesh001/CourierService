@@ -89,13 +89,13 @@ namespace CourierService.Application.Services
                     var pkgResult = result.Packages
                         .First(p => p.Id == pkg.Id);
 
-                    pkgResult.ETAHours = startTime + (pkg.DistanceKm / speed);
+                    pkgResult.ETAHours = decimal.Round(startTime + (pkg.DistanceKm / speed), 2);
                 }
 
                 decimal maxDistance = shipment.Max(p => p.DistanceKm);
                 decimal roundTripTime = (2 * maxDistance) / speed;
 
-                vehicleAvailableAt[vehicleIndex] = startTime + roundTripTime;
+                vehicleAvailableAt[vehicleIndex] = decimal.Round(startTime + roundTripTime, 2);
 
                 // Step 5: remove delivered packages
                 remaining.RemoveAll(p => shipment.Contains(p));
